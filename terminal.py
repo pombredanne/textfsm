@@ -1,4 +1,4 @@
-#!/usr/bin/python2.4
+#!/usr/bin/python
 #
 # Copyright 2011 Google Inc. All Rights Reserved.
 #
@@ -16,6 +16,11 @@
 #
 
 """Simple terminal related routines."""
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 
 __version__ = '0.1.1'
 
@@ -95,7 +100,7 @@ ANSI_START = '\001'
 ANSI_END = '\002'
 
 
-sgr_re = re.compile('(%s?\\033\[\d+(?:;\d+)*m%s?)' % (
+sgr_re = re.compile(r'(%s?\033\[\d+(?:;\d+)*m%s?)' % (
     ANSI_START, ANSI_END))
 
 
@@ -165,9 +170,9 @@ def EncloseAnsiText(text):
 def TerminalSize():
   """Returns terminal length and width as a tuple."""
   try:
-    with open(os.ctermid(), 'r') as tty:
+    with open(os.ctermid(), 'r') as tty_instance:
       length_width = struct.unpack(
-          'hh', fcntl.ioctl(tty.fileno(), termios.TIOCGWINSZ, '1234'))
+          'hh', fcntl.ioctl(tty_instance.fileno(), termios.TIOCGWINSZ, '1234'))
   except (IOError, OSError):
     try:
       length_width = (int(os.environ['LINES']),
@@ -175,6 +180,7 @@ def TerminalSize():
     except (ValueError, KeyError):
       length_width = (24, 80)
   return length_width
+
 
 def LineWrap(text, omit_sgr=False):
   """Break line to fit screen width, factoring in ANSI/SGR escape sequences.
@@ -194,7 +200,7 @@ def LineWrap(text, omit_sgr=False):
     line_length = 0
     for (index, token) in enumerate(token_list):
       # Skip null tokens.
-      if token == '':
+      if token is '':
         continue
 
       if sgr_re.match(token):
@@ -233,7 +239,7 @@ def LineWrap(text, omit_sgr=False):
       else:
         (multiline_line, text_line) = _SplitWithSgr(text_line)
         text_multiline.append(multiline_line)
-    if text_line != '':
+    if text_line:
       text_multiline.append(text_line)
   return '\n'.join(text_multiline)
 
@@ -246,7 +252,8 @@ class Pager(object):
 
   The simplest usage:
 
-    s = open('file.txt').read()
+    with open('file.txt') as f:
+      s = f.read()
     Pager(s).Page()
 
   Particularly unique is the ability to sequentially feed new text into the
@@ -286,6 +293,11 @@ class Pager(object):
       self._tty = sys.stdin
     self.SetLines(None)
     self.Reset()
+
+  def __del__(self):
+    """Deconstructor, closes tty."""
+    if getattr(self, '_tty', sys.stdin) is not sys.stdin:
+      self._tty.close()
 
   def Reset(self):
     """Reset the pager to the top of the text."""
@@ -440,14 +452,14 @@ def main(argv=None):
 
   try:
     opts, args = getopt.getopt(argv[1:], 'dhs', ['nodelay', 'help', 'size'])
-  except getopt.error, msg:
+  except getopt.error as msg:
     raise Usage(msg)
 
   # Print usage and return, regardless of presence of other args.
   for opt, _ in opts:
     if opt in ('-h', '--help'):
-      print __doc__
-      print help_msg
+      print(__doc__)
+      print(help_msg)
       return 0
 
   isdelay = False
@@ -455,7 +467,7 @@ def main(argv=None):
     # Prints the size of the terminal and returns.
     # Mutually exclusive to the paging of text and overrides that behaviour.
     if opt in ('-s', '--size'):
-      print 'Length: %d, Width: %d' % TerminalSize()
+      print('Length: %d, Width: %d' % TerminalSize())
       return 0
     elif opt in ('-d', '--delay'):
       isdelay = True
@@ -463,8 +475,10 @@ def main(argv=None):
       raise Usage('Invalid arguments.')
 
   # Page text supplied in either specified file or stdin.
+
   if len(args) == 1:
-    fd = open(args[0]).read()
+    with open(args[0]) as f:
+      fd = f.read()
   else:
     fd = sys.stdin.read()
   Pager(fd, delay=isdelay).Page()
@@ -474,7 +488,7 @@ if __name__ == '__main__':
   help_msg = '%s [--help] [--size] [--nodelay] [input_file]\n' % sys.argv[0]
   try:
     sys.exit(main())
-  except Usage, err:
-    print >>sys.stderr, err
-    print >>sys.stderr, 'For help use --help'
+  except Usage as err:
+    print(err, file=sys.stderr)
+    print('For help use --help', file=sys.stderr)
     sys.exit(2)

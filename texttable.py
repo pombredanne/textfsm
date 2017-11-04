@@ -1,4 +1,4 @@
-#!/usr/bin/python2.6
+#!/usr/bin/python
 #
 # Copyright 2012 Google Inc. All Rights Reserved.
 #
@@ -23,8 +23,14 @@ Tables can be created from CSV input and in-turn supports a number of display
 formats such as CSV and variable sized and justified rows.
 """
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 import copy
+from functools import cmp_to_key
 import textwrap
+# pylint: disable=redefined-builtin
+from six.moves import range
 import terminal
 
 
@@ -54,6 +60,13 @@ class Row(dict):
     self.row = None
     self.table = None
     self._color = None
+    self._index = {}
+
+  def _BuildIndex(self):
+    """Recreate the key index."""
+    self._index = {}
+    for i, k in enumerate(self._keys):
+      self._index[k] = i
 
   def __getitem__(self, column):
     """Support for [] notation.
@@ -73,27 +86,32 @@ class Row(dict):
       for col in column:
         ret.append(self[col])
       return ret
+
+    try:
+      return self._values[self._index[column]]
+    except (KeyError, TypeError, ValueError):
+      pass
+
     # Perhaps we have a range like '1', ':-1' or '1:'.
     try:
       return self._values[column]
     except (IndexError, TypeError):
       pass
-    for i in xrange(len(self._keys)):
-      if self._keys[i] == column:
-        return self._values[i]
+
     raise IndexError('No such column "%s" in row.' % column)
 
   def __contains__(self, value):
     return value in self._values
 
   def __setitem__(self, column, value):
-    for i in xrange(len(self)):
+    for i in range(len(self)):
       if self._keys[i] == column:
         self._values[i] = value
         return
     # No column found, add a new one.
     self._keys.append(column)
     self._values.append(value)
+    self._BuildIndex()
 
   def __iter__(self):
     return iter(self._values)
@@ -174,9 +192,10 @@ class Row(dict):
     if self._values and len(values) != len(self._values):
       raise ValueError('Header values not equal to existing data width.')
     if not self._values:
-      for _ in xrange(len(values)):
+      for _ in range(len(values)):
         self._values.append(None)
     self._keys = list(values)
+    self._BuildIndex()
 
   def _SetColour(self, value_list):
     """Sets row's colour attributes to a list of values in terminal.SGR."""
@@ -269,6 +288,7 @@ class Row(dict):
     self._keys = new_row.header
     self._values = new_row.values
     del new_row
+    self._BuildIndex()
 
   color = property(_GetColour, _SetColour, doc='Colour spec of this row')
   header = property(_GetHeader, _SetHeader, doc="List of row's headers.")
@@ -349,6 +369,7 @@ class TextTable(object):
     """Copy table instance."""
 
     new_table = self.__class__()
+    # pylint: disable=protected-access
     new_table._table = [self.header]
     for row in self[1:]:
       new_table.Append(row)
@@ -373,6 +394,7 @@ class TextTable(object):
       function = lambda row: bool(flat(row.values))
 
     new_table = self.__class__()
+    # pylint: disable=protected-access
     new_table._table = [self.header]
     for row in self:
       if function(row) is True:
@@ -393,6 +415,7 @@ class TextTable(object):
                   must be compatible with Append().
     """
     new_table = self.__class__()
+    # pylint: disable=protected-access
     new_table._table = [self.header]
     for row in self:
       filtered_row = function(row)
@@ -425,7 +448,12 @@ class TextTable(object):
     key = key or _DefaultKey
     # Exclude header by copying table.
     new_table = self._table[1:]
-    new_table.sort(cmp, key, reverse)
+
+    if cmp is not None:
+      key = cmp_to_key(cmp)
+
+    new_table.sort(key=key, reverse=reverse)
+
     # Regenerate the table with original header
     self._table = [self.header]
     self._table.extend(new_table)
@@ -512,7 +540,7 @@ class TextTable(object):
     if columns:
       result = []
       for col in columns:
-        if not col in self.header:
+        if col not in self.header:
           raise TableError('Column header %s not known in table.' % col)
         result.append(row[self.header.index(col)])
       row = result
@@ -706,7 +734,7 @@ class TextTable(object):
         value = terminal.StripAnsiText(value)
         largest[key] = max(len(value), largest[key])
         smallest[key] = max(self._SmallestColSize(value), smallest[key])
-    # pylint: enable-msg=E1103
+    # pylint: enable=E1103
 
     min_total_width = 0
     multi_word = []
@@ -784,7 +812,7 @@ class TextTable(object):
 
     # Store header in header_list, working down the wrapped rows.
     header_list = []
-    for row_idx in xrange(row_count):
+    for row_idx in range(row_count):
       for key in _FilteredCols():
         try:
           header_list.append(result_dict[key][row_idx])
@@ -823,7 +851,7 @@ class TextTable(object):
           prev_muli_line = False
 
       row_list = []
-      for row_idx in xrange(row_count):
+      for row_idx in range(row_count):
         for key in _FilteredCols():
           try:
             row_list.append(result_dict[key][row_idx])
@@ -938,11 +966,11 @@ class TextTable(object):
       raise TableError('Column %r already in table.' % column)
     if col_index == -1:
       self._table[0][column] = column
-      for i in xrange(1, len(self._table)):
+      for i in range(1, len(self._table)):
         self._table[i][column] = default
     else:
       self._table[0].Insert(column, column, col_index)
-      for i in xrange(1, len(self._table)):
+      for i in range(1, len(self._table)):
         self._table[i].Insert(column, default, col_index)
 
   def Append(self, new_values):
@@ -1030,8 +1058,8 @@ class TextTable(object):
       if not header:
         header_row = self.row_class()
         header_length = len(lst)
-        header_row.values = dict(zip(xrange(header_length),
-                                     xrange(header_length)))
+        header_row.values = dict(zip(range(header_length),
+                                     range(header_length)))
         self._table[0] = header_row
         header = True
         continue
